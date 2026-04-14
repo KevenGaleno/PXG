@@ -6,99 +6,152 @@ import re
 
 st.set_page_config(page_title="PokéX Wiki IA", page_icon="🎮", layout="wide")
 
+# Tema
 st.markdown("""
 <style>
-.stApp { background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%) }
+.main {background-color: #0E1117}
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("""
-<div style='text-align:center; padding:3rem; background:linear-gradient(45deg,#FF6B6B,#4ECDC4); 
-color:white; border-radius:25px; margin-bottom:2rem'>
-    <h1 style='margin:0;'>🤖 PokéX Wiki IA</h1>
-    <p style='margin:0;'>Busca <b>REAL</b> na wiki.pokexgames.com</p>
-</div>
-""", unsafe_allow_html=True)
+st.title("🤖 PokéX Wiki IA - Busca REAL")
+st.markdown("*Teste: 'NW', 'shiny', 'mega', 'PvP', 'IVs'*")
 
-class PokexWikiAI:
+class PokexScraper:
     def __init__(self):
-        self.base_url = "https://wiki.pokexgames.com"
-        self.headers = {'User-Agent': 'Mozilla/5.0'}
+        self.base = "https://wiki.pokexgames.com"
+        self.headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
     
-    def buscar_wiki(self, termo):
+    def debug_busca(self, termo):
+        """DEBUG - mostra o que a wiki retorna"""
         try:
-            search_url = f"{self.base_url}/index.php?search={quote(termo)}"
-            resp = requests.get(search_url, headers=self.headers, timeout=10)
-            soup = BeautifulSoup(resp.content, 'html.parser')
+            url = f"{self.base}/index.php?search={quote(termo)}"
+            print(f"🔍 URL: {url}")
+            resp = requests.get(url, headers=self.headers)
+            soup = BeautifulSoup(resp.text, 'html.parser')
             
-            resultados = []
-            for link in soup.find_all('a', href=True):
-                href = link['href']
-                if 'title=' in href and termo.lower() in link.get_text().lower():
-                    pagina_url = urljoin(self.base_url, href)
-                    conteudo = self.extrair_conteudo(pagina_url)
-                    if conteudo:
-                        resultados.append({
-                            'titulo': link.get_text().strip(),
-                            'url': pagina_url,
-                            'conteudo': conteudo
-                        })
-                    if len(resultados) >= 2:
-                        break
-            return resultados
-        except:
+            # DEBUG: todos links com title=
+            links = soup.find_all('a', href=re.compile(r'title='))
+            print(f"📋 Encontrou {len(links)} links:")
+            for i, link in enumerate(links[:5]):
+                print(f"  {i+1}. {link.text.strip()} -> {link['href']}")
+            
+            return links
+        except Exception as e:
+            print(f"ERRO: {e}")
             return []
     
-    def extrair_conteudo(self, url):
+    def buscar_real(self, termo):
+        """Busca robusta - acha QUALQUER coisa"""
+        try:
+            # Método 1: Search direto
+            search_url = f"{self.base}/index.php?search={quote(termo)}"
+            resp = requests.get(search_url, headers=self.headers, timeout=15)
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            
+            resultados = []
+            
+            # Tenta múltiplos seletores
+            containers = (
+                soup.find_all('div', class_=re.compile('result')) or
+                soup.find_all('li') or
+                soup.find_all('div', class_='searchresult') or
+                soup.find_all('a', href=re.compile(r'title='))
+            )
+            
+            for item in containers[:5]:
+                link = item.find('a', href=True)
+                if link and 'title=' in link['href']:
+                    pagina_url = urljoin(self.base, link['href'])
+                    conteudo = self.get_conteudo(pagina_url)
+                    if conteudo:
+                        resultados.append({
+                            'titulo': link.get_text().strip()[:100],
+                            'url': pagina_url,
+                            'conteudo': conteudo[:600]
+                        })
+            
+            # Método 2: Guess página direta
+            if not resultados:
+                guess_pages = [
+                    f"{self.base}/index.php/{quote(termo.replace(' ', '_'))}",
+                    f"{self.base}/index.php/{quote(termo.title())}"
+                ]
+                for guess in guess_pages:
+                    conteudo = self.get_conteudo(guess)
+                    if conteudo:
+                        resultados.append({
+                            'titulo': f"Página: {termo}",
+                            'url': guess,
+                            'conteudo': conteudo[:600]
+                        })
+                        break
+            
+            return resultados
+            
+        except Exception as e:
+            return [{'titulo': 'Erro técnico', 'conteudo': f'Falha na conexão: {str(e)}'}]
+    
+    def get_conteudo(self, url):
+        """Extrai conteúdo de qualquer página wiki"""
         try:
             resp = requests.get(url, headers=self.headers, timeout=10)
-            soup = BeautifulSoup(resp.content, 'html.parser')
-            conteudo = soup.find('div', {'id': 'mw-content-text'})
+            soup = BeautifulSoup(resp.text, 'html.parser')
+            
+            # Múltiplos seletores de conteúdo
+            conteudo = (
+                soup.find('div', id='mw-content-text') or
+                soup.find('div', class_='mw-parser-output') or
+                soup.find('article') or
+                soup.find('main') or
+                soup.find('div', class_='content')
+            )
+            
             if conteudo:
-                texto = re.sub(r'\s+', ' ', conteudo.get_text()).strip()
+                texto = conteudo.get_text(separator=' ', strip=True)
+                texto = re.sub(r'\s+', ' ', texto)
                 return texto[:1000] + "..." if len(texto) > 1000 else texto
             return ""
         except:
             return ""
 
-# Inicializar
-if 'ai' not in st.session_state:
-    st.session_state.ai = PokexWikiAI()
+# UI
+ai = PokexScraper()
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 
-# Histórico
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
 
-# Chat input
-if prompt := st.chat_input("🔍 Digite: 'como funciona a NW', 'shiny', 'mega pedra'..."):
-    st.session_state.messages.append({"role": "user", "content": prompt})
+if query := st.chat_input("🔍 'como funciona a NW', 'shiny', etc..."):
+    st.session_state.messages.append({"role": "user", "content": query})
     
     with st.chat_message("user"):
-        st.markdown(prompt)
+        st.markdown(query)
     
     with st.chat_message("assistant"):
-        with st.spinner("🔎 Buscando na Wiki PokéX..."):
-            resultados = st.session_state.ai.buscar_wiki(prompt)
+        st.info(f"🔎 Buscando '{query}' na wiki...")
+        resultados = ai.buscar_real(query)
         
         if resultados:
-            for i, result in enumerate(resultados):
-                st.markdown(f"**{result['titulo']}**")
-                st.markdown(f"📄 {result['conteudo']}")
-                st.markdown(f"[🔗 Abrir na Wiki]({result['url']})")
-                st.markdown("---")
+            for result in resultados:
+                with st.expander(result['titulo']):
+                    st.markdown(result['conteudo'])
+                    st.markdown(f"[🔗 {result['url'][:50]}...]({result['url']})")
         else:
-            st.markdown("❓ Não encontrei na wiki. Tente: 'NW', 'shiny', 'PvP', 'mega pedra'")
-    
-    st.session_state.messages.append({"role": "assistant", "content": "Resposta gerada"})
+            st.error("❌ Zero resultados. Tente termos exatos da wiki!")
+        
+        # Debug info
+        st.caption("Debug: Teste 'Página_principal' ou navegue wiki primeiro")
 
-# Sidebar dicas
-with st.sidebar:
-    st.markdown("### 💡 **Teste estes:**")
-    testes = ["como funciona a NW", "shiny", "mega pedra", "PvP", "IVs"]
-    for teste in testes:
-        if st.button(teste):
-            st.session_state.messages.append({"role": "user", "content": teste})
-            st.rerun()
+# Botões teste
+col1, col2, col3 = st.columns(3)
+if col1.button("🧪 Teste NW"):
+    st.session_state.messages.append({"role": "user", "content": "NW"})
+    st.rerun()
+if col2.button("⭐ Shiny"):
+    st.session_state.messages.append({"role": "user", "content": "shiny"})
+    st.rerun()
+if col3.button("💎 Mega"):
+    st.session_state.messages.append({"role": "user", "content": "mega pedra"})
+    st.rerun()
