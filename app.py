@@ -50,3 +50,9 @@ def extrair_conteudo(url):
         soup = BeautifulSoup(response.text, 'html.parser')
         # Limpeza de elementos desnecessários
         for element in soup(['script', 'style', 'nav', 'footer', 'header', 'aside', 'table.navbox']):
+            element.decompose()  # <--- ESTA LINHA PRECISA DE 4 ESPAÇOS A MAIS QUE O FOR
+        
+        content = soup.find('div', id='mw-content-text')
+        return content.get_text(separator='\n', strip=True)[:8000] if content else "Página sem conteúdo legível."
+    except:
+        return "Erro ao extrair dados da página."
