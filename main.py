@@ -84,7 +84,7 @@ def chat_pxg():
         try:
             # Usando o modelo 2.0 Flash (mais moderno e evita o erro 404)
             response = client.models.generate_content(
-                model="gemini-2.0-flash", 
+                model="gemini-1.5-flash", 
                 contents=prompt
             )
             print(f"\nIA PXG: {response.text}")
